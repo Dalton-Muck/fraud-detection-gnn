@@ -29,7 +29,6 @@ def load_and_display_dataset(path):
 # https://www.kaggle.com/datasets/sgpjesus/bank-account-fraud-dataset-neurips-2022 
 path = kagglehub.dataset_download("sgpjesus/bank-account-fraud-dataset-neurips-2022")
 df = load_and_display_dataset(path)
-# preprocessing this dataset
 
 # Flags to add edge for 
 def add_address_change_edges(df, graph):
@@ -38,7 +37,7 @@ def add_address_change_edges(df, graph):
     """
     count = 0
     for idx, row in df.iterrows():
-        if row['prev_address_months_count'] + row['current_address_months_count'] < 12:
+        if row['prev_address_months_count'] + row['current_address_months_count'] < 7:
             graph.add_edge(f"node_{idx}", f"address_change_flag")
             count += 1
     print(f"Added {count} edges for frequent address changes.")
@@ -60,18 +59,19 @@ def add_income_to_balance_edges(df, graph):
     """
     count = 0
     for idx, row in df.iterrows():
-        if row['income'] / (row['intended_balcon_amount'] + 1) < 0.01:
-            graph.add_edge(f"node_{idx}", f"low_income_balance_flag")
+        if row['income'] < 0.25 and row['intended_balcon_amount'] > 75:
+            graph.add_edge(f"node_{idx}", f"low_income_high_balance_flag")
             count += 1
     print(f"Added {count} edges for low income-to-balance ratio.")
     return count
+
 def add_email_similarity_edges(df, graph):
     """
     Add edges for low email similarity.
     """
     count = 0
     for idx, row in df.iterrows():
-        if row['name_email_similarity'] < 0.1:
+        if row['name_email_similarity'] < 0.01:
             graph.add_edge(f"node_{idx}", f"low_email_similarity_flag")
             count += 1
     print(f"Added {count} edges for low email similarity.")
@@ -82,32 +82,31 @@ def add_zipcode_activity_edges(df, graph):
     """
     count = 0
     recent_activity_counter = {}
-    # add the names of all the zipcodes to a list and set the count to 0
+    # Count the total number of accounts added in the last 7 days for each zipcode
     for idx, row in df.iterrows():
-        if row['zip_count_4w'] not in recent_activity_counter:
-            recent_activity_counter[row['zip_count_4w']] = {'count': 0, 'total': 0}
-        recent_activity_counter[row['zip_count_4w']]['total'] += 1
-    print (f"Total number of zipcodes: {len(recent_activity_counter)}")
+        zipcode = row['zip_count_4w']
+        if zipcode not in recent_activity_counter:
+            recent_activity_counter[zipcode] = {'count': 0, 'total': 0}
+        recent_activity_counter[zipcode]['total'] += 1
+        if row['days_since_request'] <= 7:
+            recent_activity_counter[zipcode]['count'] += 1
+
+    # Sort zipcodes by activity ratio (count / total) in descending order
+    sorted_zipcodes = sorted(
+        recent_activity_counter.items(),
+        key=lambda x: x[1]['count'] / x[1]['total'] if x[1]['total'] > 0 else 0,
+        reverse=True
+    )
+
+    # Get the top 3 zipcodes with the highest activity ratio
+    top_zipcodes = {zipcode for zipcode, _ in sorted_zipcodes[:3]}
+    print(f"Top 3 zipcodes with the most activity: {top_zipcodes}")
+
+    # Add edges to the graph for nodes in the top 3 zipcodes
     for idx, row in df.iterrows():
-        # count the total number of accounts added in last 7 days for each zipcode
-        if row['days_since_request'] <= 1:
-            recent_activity_counter[row['zip_count_4w']]['count'] += 1
-    # pick the 3 zipcode with the most activity by dividing the count by the total number of accounts
-    recent_activity_counter = sorted(recent_activity_counter.items(), key=lambda x: x[1]['count'], reverse=True)
-    recent_activity_counter = dict(recent_activity_counter)
-    # print the top 3 zipcodes with the most activity
-    print(f"Top 3 zipcodes with the most activity: {list(recent_activity_counter.keys())[:3]}")
-    # ad edges to the graph for the top 3 zipcodes with the most activity
-    for idx, row in df.iterrows():
-        if row['zip_count_4w'] in list(recent_activity_counter.keys())[:3]:
+        if row['zip_count_4w'] in top_zipcodes and row['days_since_request'] < 7:
             graph.add_edge(f"node_{idx}", f"high_activity_zipcode_flag")
             count += 1
-    # for idx, row in df.iterrows():
-    # # Check if the number of applications in the last 7 days is greater than 50% of the total applications in the last 4 weeks
-    #     if (recent_activity_counter[row['zip_count_4w']]['count']) / (recent_activity_counter[row['zip_count_4w']]['total']) > 0.9 :
-    #         graph.add_edge(f"node_{idx}", f"high_activity_zipcode_flag")
-    #         count += 1
-        
 
     print(f"Added {count} edges for high activity in a new zipcode.")
     return count
