@@ -30,6 +30,17 @@ def load_and_display_dataset(path):
 path = kagglehub.dataset_download("sgpjesus/bank-account-fraud-dataset-neurips-2022")
 df = load_and_display_dataset(path)
 
+# Preprocessing this dataset
+df['fraud_bool'] = df['fraud_bool'].apply(lambda x: max(0, min(1, x)))
+df['income'] = df['income'].apply(lambda x: max(0, min(1, x)))
+df['name_email_similarity'] = df['name_email_similarity'].apply(lambda x: max(0, min(1, x)))
+df['prev_address_months_count'] = df['prev_address_months_count'].apply(lambda x: max(-1, min(380, x)))
+df['current_address_months_count'] = df['current_address_months_count'].apply(lambda x: max(-1, min(406, x)))
+df['customer_age'] = df['customer_age'].apply(lambda x: max(0, x))  # Assuming age cannot be negative
+df['days_since_request'] = df['days_since_request'].apply(lambda x: max(0, min(78, x)))
+df['intended_balcon_amount'] = df['intended_balcon_amount'].apply(lambda x: max(-1, min(108, x)))
+df['zip_count_4w'] = df['zip_count_4w'].apply(lambda x: max(1, min(5767, x)))
+
 # Flags to add edge for 
 def add_address_change_edges(df, graph):
     """
