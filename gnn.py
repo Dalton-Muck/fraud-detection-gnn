@@ -25,7 +25,7 @@ def load_and_preprocess_data(path):
     
     df = pd.read_csv(os.path.join(path, csv_files[0]))
     
-    # Original preprocessing exactly as specified
+    # Original preprocessing to match kaggles constraints
     df['fraud_bool'] = df['fraud_bool'].apply(lambda x: max(0, min(1, x)))
     df['income'] = df['income'].apply(lambda x: max(0, min(1, x)))
     df['name_email_similarity'] = df['name_email_similarity'].apply(lambda x: max(0, min(1, x)))
@@ -100,6 +100,7 @@ def build_pyg_data(df):
         'address_stability', 'income_balance_ratio'
     ]
     
+    # more feature selection
     # Replace invalid values (NaN, infinity) with appropriate defaults
     df[feature_columns] = df[feature_columns].replace([float('inf'), -float('inf')], float('nan')).fillna(0)
     
@@ -130,10 +131,10 @@ def build_pyg_data(df):
         flag_features
     ])
     
-    # Create labels (0 for flag nodes)
+    # Create labels (1 for flag nodes)
     y = torch.cat([
         torch.tensor(df['fraud_bool'].values, dtype=torch.long),
-        torch.zeros(6, dtype=torch.long)
+        torch.ones(6, dtype=torch.long)
     ])
     
     return Data(
@@ -159,7 +160,7 @@ def main():
     print(f"- Fraud rate: {df['fraud_bool'].mean():.2%}")
     
     # Train-test split
-    train_mask = torch.rand(graph_data.num_nodes - 6) < 0.95  # 80% for training
+    train_mask = torch.rand(graph_data.num_nodes - 6) < 0.80  # 80% for training
     # ensures nodes in train set are not in test set
     test_mask = ~train_mask
     train_mask = torch.cat([train_mask, torch.zeros(6, dtype=torch.bool)])  # Exclude flag nodes
@@ -181,8 +182,8 @@ def main():
 
     # Initialize model, optimizer, and loss function
     # 16 is the number of patterns to learn from the data, increasing this number increases the complexity of the model
-    model = GNNModel(graph_data.num_features, 8, 2)  # 2 output classes: fraud or not
-    fraud_weight = (1 / df['fraud_bool'].mean()) * 0.5  # Scale down slightly
+    model = GNNModel(graph_data.num_features, 16, 2)  # 2 output classes: fraud or not
+    fraud_weight = (1 / df['fraud_bool'].mean()) * .8  # Scale down slightly
     loss_fn = torch.nn.NLLLoss(weight=torch.tensor([1.0, fraud_weight], dtype=torch.float))
 
     # Oversample fraud cases in training
@@ -197,7 +198,7 @@ def main():
     
     # Training loop
     # epoche: number of iterations over the entire dataset updates the model weights after each epoch
-    for epoch in range(30):  # Loop over 100 epochs
+    for epoch in range(100):  # Loop over 100 epochs
         model.train()
         # reset: need to call this before the backwards pass to reset gradients which control the weight updates
         optimizer.zero_grad()
@@ -231,7 +232,7 @@ def main():
         results = pd.concat([results, df.reset_index(drop=True)], axis=1)
         
         # Calculate evaluation metrics
-        pred_labels = (fraud_probs[:len(df)] > 0.5).numpy().astype(int)  # Use threshold of 0.5 for classification
+        pred_labels = (fraud_probs[:len(df)] > 0.8).numpy().astype(int)  # Use threshold of 0.5 for classification
         print("\nClassification Report:")
         print(classification_report(results['actual_fraud'], pred_labels))
         
@@ -242,8 +243,8 @@ def main():
 
 if __name__ == "__main__":
     predictions = main()
-    print("\nTop 100 predicted fraud probabilities:")
-    print(predictions[['node_index', 'actual_fraud', 'predicted_fraud_prob']].nlargest(100, 'predicted_fraud_prob'))
+    print("\nTop 10 predicted fraud probabilities:")
+    print(predictions[['node_index', 'actual_fraud', 'predicted_fraud_prob']].nlargest(10, 'predicted_fraud_prob'))
     
     # Save predictions to CSV
     predictions.to_csv('fraud_predictions.csv', index=False)
